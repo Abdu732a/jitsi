@@ -8,6 +8,9 @@ declare global {
   }
 }
 
+// FIX: Importing the JSX type explicitly fixes the Netlify build error (TS2503)
+import type { JSX } from 'react/jsx-runtime';
+
 // Props for the helper button component
 interface ControlButtonProps {
   onClick: () => void;
@@ -15,7 +18,7 @@ interface ControlButtonProps {
   className?: string;
 }
 
-// Helper component for control buttons - now using custom CSS class 'app-btn'
+// Helper component for control buttons - uses custom CSS class 'app-btn'
 const ControlButton: React.FC<ControlButtonProps> = ({ onClick, label, className = '' }) => {
   return (
     <button
@@ -30,16 +33,16 @@ const ControlButton: React.FC<ControlButtonProps> = ({ onClick, label, className
 // --- Main App Component ---
 export default function App(): JSX.Element {
   // State for user inputs and application status
-  const [roomName, setRoomName] = useState<string>('');
-  const [displayName, setDisplayName] = useState<string>('');
-  const [meetingStarted, setMeetingStarted] = useState<boolean>(false);
-  const [scriptLoaded, setScriptLoaded] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [roomName, setRoomName] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [meetingStarted, setMeetingStarted] = useState(false);
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Refs for the Jitsi API instance and the container DOM element
-  const jitsiApiRef = useRef<any>(null);
-  const jitsiContainerRef = useRef<HTMLDivElement | null>(null);
-  const isMountedRef = useRef<boolean>(true); // To prevent state updates on unmounted component
+  const jitsiApiRef = useRef(null);
+  const jitsiContainerRef = useRef(null);
+  const isMountedRef = useRef(true); // To prevent state updates on unmounted component
 
   // 1) Load the Jitsi external API script (only once on mount)
   useEffect(() => {
@@ -60,10 +63,8 @@ export default function App(): JSX.Element {
     };
     script.onerror = () => {
       console.error('Failed to load Jitsi API script.');
-      // Handle scenario where script loading fails
       if (isMountedRef.current) {
-        setScriptLoaded(false); // Ensure the app doesn't hang
-        // Optionally show an error message to the user
+        setScriptLoaded(false);
       }
     };
     document.head.appendChild(script);
@@ -114,24 +115,24 @@ export default function App(): JSX.Element {
           roomName: roomName || `MyJitsiMeeting-${Math.random().toString(36).substr(2, 9)}`,
           width: '100%',
           height: '100%',
-          parentNode: jitsiContainerRef.current as HTMLElement,
-          // Configuration overwrites for the meeting itself
+          parentNode: jitsiContainerRef.current,
+          // Configuration overwrites
           configOverwrite: {
             startWithAudioMuted: false,
             startWithVideoMuted: false,
             disableSimulcast: false,
-            prejoinPageEnabled: false, // Bypass the pre-join screen
+            prejoinPageEnabled: false,
           },
-          // Configuration overwrites for the UI interface
+          // UI interface overwrites
           interfaceConfigOverwrite: {
-            SETTINGS_SECTIONS: ['devices', 'language', 'profile'], // Keep essential settings
+            SETTINGS_SECTIONS: ['devices', 'language', 'profile'],
             SHOW_CHROME_EXTENSION_BANNER: false,
             SHOW_JITSI_WATERMARK: false,
             SHOW_BRAND_WATERMARK: false,
             SHOW_POWERED_BY_WATERMARK: false,
             SHOW_PROMOTIONAL_CLOSE_PAGE: false,
-            DEFAULT_BACKGROUND: '#2a2a2a', // Custom dark background
-            TOOLBAR_BUTTONS: [ // Only show necessary buttons
+            DEFAULT_BACKGROUND: '#2a2a2a',
+            TOOLBAR_BUTTONS: [
               'microphone', 'camera', 'desktop', 'fullscreen',
               'fodeviceselection', 'hangup', 'chat', 'settings',
               'tileview', 'raisehand',
@@ -142,7 +143,7 @@ export default function App(): JSX.Element {
           },
         };
 
-        // Dispose existing instance before creating a new one (important for re-joins)
+        // Dispose existing instance before creating a new one
         if (jitsiApiRef.current) {
           try {
             jitsiApiRef.current.dispose();
@@ -158,7 +159,6 @@ export default function App(): JSX.Element {
         api.on('videoConferenceJoined', () => {
           if (!isMountedRef.current) return;
           setIsLoading(false);
-          // Set display name one more time to ensure it sticks
           try {
             api.executeCommand('displayName', displayName || 'Guest');
           } catch (err) { /* ignore */ }
@@ -167,7 +167,6 @@ export default function App(): JSX.Element {
         // Event listener for when the user leaves the conference
         api.on('videoConferenceLeft', () => {
           if (!isMountedRef.current) return;
-          // Clean up state and API reference
           try {
             jitsiApiRef.current?.dispose();
           } catch (e) { /* ignore */ }
@@ -176,7 +175,7 @@ export default function App(): JSX.Element {
         });
 
         // Event listener for general logging/debugging
-        api.on('log', (data: { logLevel: string; log: any }) => {
+        api.on('log', (data) => {
           if (data?.logLevel === 'error') {
             console.error('Jitsi API Error:', data.log);
           }
@@ -202,35 +201,29 @@ export default function App(): JSX.Element {
         jitsiApiRef.current = null;
       }
     };
-    // Dependency array ensures effect runs when these values change
   }, [scriptLoaded, meetingStarted, roomName, displayName]);
 
   // 3) Handlers for controls
-  const handleStartMeeting = (e: React.FormEvent) => {
+  const handleStartMeeting = (e) => {
     e.preventDefault();
     if (displayName.trim()) {
       setMeetingStarted(true);
     } else {
-      // Basic client-side validation using the required attribute on the input
       console.warn('Please enter your name.');
     }
   };
 
   const handleHangUp = () => {
     if (jitsiApiRef.current) {
-      // Execute hangup command, which should trigger the 'videoConferenceLeft' event
-      // and thus the state cleanup in the useEffect.
       try {
         jitsiApiRef.current.executeCommand('hangup');
       } catch (e) {
         console.error('hangup command failed', e);
-        // Fallback: manually force state reset if command fails
         setMeetingStarted(false);
       }
     }
   };
 
-  // The following commands toggle the respective states via the API
   const handleToggleMute = () => {
     jitsiApiRef.current?.executeCommand('toggleAudio');
   };
@@ -243,10 +236,10 @@ export default function App(): JSX.Element {
     jitsiApiRef.current?.executeCommand('toggleChat');
   };
 
-  // Embedded CSS for styling, replacing Tailwind utilities
+  // Embedded CSS for styling, replacing Tailwind utilities to ensure self-containment
   const customStyles = `
     /* Basic Reset */
-    body { margin: 0; padding: 0; background-color: #1a1a1a; font-family: Arial, sans-serif; }
+    body { margin: 0; padding: 0; background-color: #1a1a1a; font-family: 'Inter', Arial, sans-serif; }
     
     /* Main Container */
     .app-container {
@@ -302,7 +295,7 @@ export default function App(): JSX.Element {
       color: #6aabff;
     }
     
-    /* Form Inputs (Mimicking Bootstrap's dark theme form-control) */
+    /* Form Inputs */
     .form-group {
       margin-bottom: 20px;
     }
